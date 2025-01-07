@@ -1,81 +1,89 @@
 # Mad-Llama-Disease
 Investigating Llama-3.1's penchant for failing to generate the end-of-string token and thus generating gibberish until the context window has been filled.
 
+## Introduction
 
-# Investigating End-of-String Token Generation Failures in Llama-3.1
-
-When running large language models in production, you occasionally encounter surprising failure modes that can impact service reliability. In our production environment, we've been grappling with an interesting issue in the Llama-3.1 model family: occasional failures to generate end-of-string tokens, leading to runaway text generation that continues until hitting the context window limit and often leading to crashing the container running the model.
+Large Language Models (LLMs) have become critical components in many organizations' tech stacks, powering everything from chatbots to automated workflows. However, running these models in production comes with its own set of challenges. In this blog post, I'll share our experience addressing a specific issue we've encountered with the Llama-3.1 model family: the occasional failure to generate an end-of-string (eos) token.
 
 ## The Problem
 
-Our production service runs Llama-3.1 models (8B and 70B) to power both a web-based chatbot and API endpoints for other teams' applications. Several times per day, we observe the model entering a state where it fails to generate an end-of-string token, instead producing continuous text until it exhausts the maximum context length. This not only wastes computational resources but also impacts the user experience and service reliability.
+When running Llama-3.1 models in production (both 8B and 70B variants), we've observed an interesting failure mode where the model occasionally fails to generate an end-of-string token. This leads to the model continuing to generate tokens until it hits the maximum context window size of 128K tokens. This behavior creates two significant problems:
+
+1. **Performance Impact**: Generating 128K tokens takes approximately 30 minutes, creating an unacceptable user experience.
+2. **Stability Issues**: The extended generation fills up the GPU VRAM with the KV cache, eventually causing the container to crash. We observe this happening 7-10 times daily.
+
+## Initial Mitigation
+
+The most straightforward solution to this problem is setting the `max_tokens` parameter in the request. By limiting generation to something like 8,192 tokens, we can prevent the worst impacts of this failure mode. While this is a crucial first step that we recommend implementing immediately, we wanted to explore whether we could reduce the probability of this failure occurring in the first place.
 
 ## Experimental Setup
 
-To investigate this issue systematically, we set up an experiment using the 4-bit quantized version of Llama-3.1-8B running on our local infrastructure. The quantization helps us optimize GPU memory usage while still maintaining model functionality for testing purposes.
+We designed an experiment to investigate how three key request sampling parameters affect the failure rate:
 
-Our experiment focuses on three key parameters that influence the model's token generation behavior:
+1. **temperature**: Controls sampling randomness (higher values = more random)
+2. **min_p**: Sets the minimum probability threshold for token consideration
+3. **repetition_penalty**: Penalizes tokens based on their previous appearances
 
-1. **Temperature** - Controls sampling randomness, with lower values producing more deterministic outputs
-2. **Minimum P (min_p)** - Sets a threshold for token probability relative to the most likely token
-3. **Repetition Penalty** - Adjusts token probabilities based on their previous occurrence in the context
+### Technical Details
 
-We developed a test harness that simulates real-world usage patterns by:
-- Sending requests at a rate of 60 per minute
-- Running multiple concurrent requests using thread pooling
-- Testing various parameter combinations using Optuna for optimization
-- Tracking the failure rate for each parameter combination
+- Model: 4-bit quantized Llama-3.1-8B (matching our production environment)
+- Request Rate: 60 requests/minute
+- Trial Size: 600 requests per parameter combination
+- Trial Structure: 5 independent runs of 120 requests each (to protect GPU VRAM)
+- Optimization Framework: Optuna for multi-objective optimization
 
-The test prompts simulate exam responses, intentionally encouraging longer outputs to better observe the failure mode. Each prompt includes a system message that instructs the model to generate comprehensive, well-structured responses of at least 3000 words.
+### Optimization Goals
 
-Here's a key section of our experimental setup:
+We defined two objectives for our optimization:
+
+1. **Primary**: Minimize the failure rate (percentage of requests hitting max tokens)
+2. **Secondary**: Minimize deviation from the default repetition_penalty (1.0)
+
+The second objective reflects our preference to keep parameters close to their defaults unless we see significant benefits from changing them.
+
+## Experimental Implementation
+
+Our experiment uses a ThreadPoolExecutor to simulate realistic request patterns with exponentially distributed arrival times. We implemented comprehensive error handling and logging to ensure reliable results. The code tracks the number of requests that hit the maximum token limit and calculates the failure rate for each parameter combination.
+
+Here's a key section of our implementation showcasing the parameter ranges we explored:
 
 ```python
-def run_trial(
-    self,
-    eval_id: int,
-    temperature: float,
-    min_p: float,
-    repetition_penalty: float,
-) -> float:
-    arrival_times = np.cumsum(
-        self.rng.exponential(scale=60.0 / self.request_rate, size=self.n_requests)
-    )
-    prompts = self.rng.choice(self.prompts, self.n_requests, replace=True)
-    
-    # Track failures where the model hits max tokens
-    n_failed = 0
-    with ThreadPoolExecutor(256) as executor:
-        # Implementation of concurrent request processing
-        # and failure detection
+temperature_min = 0.7
+temperature_max = 0.9
+min_p_min = 0.0
+min_p_max = 0.1
+repetition_penalty_min = 1.0
+repetition_penalty_max = 1.1
 ```
 
-## Parameter Ranges Tested
+## Results
 
-Our experiment explores the following parameter ranges:
-- Temperature: 0.7 to 0.9
-- min_p: 0.0 to 0.1
-- Repetition Penalty: 1.0 to 1.1
+[RESULTS TO BE INSERTED WHEN EXPERIMENT COMPLETES]
 
-[RESULTS SECTION TO BE ADDED]
+Expected data to be included:
+- Optimal parameter values discovered
+- Failure rate comparison (baseline vs. optimized)
+- Trade-offs observed between parameters
+- Visualization of the parameter space exploration
 
-## Implementation Notes
+## Implementation Recommendations
 
-For those interested in reproducing our results, we're running our quantized model using vLLM with the following configuration:
+Based on our initial findings, we recommend a two-pronged approach:
 
-```bash
-vllm serve neuralmagic/Meta-Llama-3.1-8B-Instruct-quantized.w4a16 \
-    --max-model-len 9216 \
-    --max-num-seqs 64 \
-    --gpu_memory_utilization 0.95 \
-    --served-model-name Llama-3.1-8B
-```
+1. **Immediate Action**: Implement max_tokens limit of 8,192 tokens to prevent system crashes
+2. **Parameter Optimization**: Apply the discovered optimal parameters once results are available
 
-## Next Steps
+## Future Work
 
-Once we have the experimental results, we plan to:
-1. Implement parameter guardrails based on the optimal values found
-2. Develop monitoring systems to detect this failure mode in production
-3. Consider implementing a token budget system to prevent runaway generation
+This experiment focuses on the Llama-3.1 model family, but similar issues might affect other LLMs. Future work could include:
 
-Stay tuned for the complete results of our parameter optimization study and our recommendations for mitigating this issue in production environments.
+- Extending the experiment to other model families
+- Investigating the relationship between model size and failure rates
+- Exploring additional sampling parameters
+- Analyzing the types of prompts that tend to trigger this behavior
+
+## Conclusion
+
+While we await the final results of our parameter optimization experiment, the investigation has already yielded valuable insights into managing LLMs in production. The combination of setting hard limits through max_tokens while optimizing sampling parameters provides a robust approach to preventing endless generation issues.
+
+Remember that your specific use case might require different parameter values, but this experimental framework provides a solid foundation for finding the optimal configuration for your deployment.
