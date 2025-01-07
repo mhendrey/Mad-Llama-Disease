@@ -45,6 +45,8 @@ The second objective reflects our preference to keep parameters close to their d
 
 Each trial in our experiment tests a specific combination of temperature, min_p, and repetition_penalty parameters. To simulate real-world conditions, we generate requests at a rate of 60 per minute using exponentially distributed arrival times. This approach helps us understand how the model behaves under production-like conditions.
 
+To properly stress test the model's behavior, we carefully designed our prompts to encourage longer responses. We used a system prompt that frames the model as a student taking an exam, specifically requesting well-reasoned answers of at least 3,000 words. This approach helps us better evaluate the model's tendency to generate endlessly under heavy loads, as shorter responses might not sufficiently exercise the failure mode we're investigating.
+
 A key aspect of our implementation is how we evaluate the failure rate. For each request in a trial, we track whether it generates the maximum allowed number of tokens (8,192 in our case). Here's a snippet showing how we calculate the failure rate for a single trial:
 
 ```python
@@ -53,7 +55,7 @@ if completion_tokens == self.max_completion_tokens:
     n_failed += 1
     print(f"  Failed {request_id=}")
 
-failure_rate = n_failed / self.n_requests
+failure_rate = 100.0 * n_failed / self.n_requests
 ```
 
 To protect against GPU memory issues, we split each trial of 600 requests into 5 independent runs of 120 requests each. The final failure rate for a parameter combination is the average across these runs, providing a more robust estimate of the true failure rate.
