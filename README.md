@@ -43,18 +43,20 @@ The second objective reflects our preference to keep parameters close to their d
 
 ## Experimental Implementation
 
-Our experiment uses a ThreadPoolExecutor to simulate realistic request patterns with exponentially distributed arrival times. We implemented comprehensive error handling and logging to ensure reliable results. The code tracks the number of requests that hit the maximum token limit and calculates the failure rate for each parameter combination.
+Each trial in our experiment tests a specific combination of temperature, min_p, and repetition_penalty parameters. To simulate real-world conditions, we generate requests at a rate of 60 per minute using exponentially distributed arrival times. This approach helps us understand how the model behaves under production-like conditions.
 
-Here's a key section of our implementation showcasing the parameter ranges we explored:
+A key aspect of our implementation is how we evaluate the failure rate. For each request in a trial, we track whether it generates the maximum allowed number of tokens (8,192 in our case). Here's a snippet showing how we calculate the failure rate for a single trial:
 
 ```python
-temperature_min = 0.7
-temperature_max = 0.9
-min_p_min = 0.0
-min_p_max = 0.1
-repetition_penalty_min = 1.0
-repetition_penalty_max = 1.1
+n_failed = 0
+if completion_tokens == self.max_completion_tokens:
+    n_failed += 1
+    print(f"  Failed {request_id=}")
+
+failure_rate = n_failed / self.n_requests
 ```
+
+To protect against GPU memory issues, we split each trial of 600 requests into 5 independent runs of 120 requests each. The final failure rate for a parameter combination is the average across these runs, providing a more robust estimate of the true failure rate.
 
 ## Results
 
