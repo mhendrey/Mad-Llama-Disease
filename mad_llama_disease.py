@@ -3,6 +3,7 @@ from datetime import datetime
 import numpy as np
 from openai import OpenAI
 import optuna
+from pprint import pprint
 from time import sleep
 
 
@@ -222,8 +223,8 @@ class Objective:
                         n_failed += 1
                         print(f"  Failed {request_id=}")
 
-        failure_rate = n_failed / self.n_requests
-        print(f"  Finished with {n_failed=:} and {failure_rate=:.05f}")
+        failure_rate = 100.0 * n_failed / self.n_requests
+        print(f"  Finished with {n_failed=:} and {failure_rate=:.03f}")
 
         return failure_rate
 
@@ -253,7 +254,7 @@ class Objective:
             for eval_id in range(self.n_evaluations)
         ]
         print(f"Trial finished: {results}")
-        return np.mean(results)
+        return np.mean(results), repetition_penalty
 
 
 def main():
@@ -278,10 +279,12 @@ def main():
     )
 
     study = optuna.create_study(
-        study_name="minimize_endless_generation",
-        storage="sqlite:///minimize_endless_generation_failure_rate.db",
-        direction="minimize",
+        study_name="mad_llama_disease",
+        storage="sqlite:///mad_llama_disease.db",
+        directions=["minimize", "minimize"],
+        sampler=optuna.samplers.TPESampler(),
     )
+
     study.optimize(
         Objective(
             n_evaluations=5,
@@ -291,8 +294,10 @@ def main():
         n_trials=24,
     )
 
-    print(study.best_trial)
-    print(study.best_params)
+    for i, t in enumerate(study.best_trials):
+        print(f"Best Trial {i:02} has failure rate = {t.values[0]:.03f}")
+        pprint(t.params)
+        print("")
 
 
 if __name__ == "__main__":
