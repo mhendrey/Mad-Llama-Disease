@@ -1,13 +1,23 @@
+import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-import json
 import matplotlib.pyplot as plt
 import numpy as np
 from openai import OpenAI
 import optuna
-import pandas as pd
 from pprint import pprint
 from time import sleep
+
+
+def parse_cmd_line():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "study_name_base",
+        type=str,
+        help="Base name will have '_phase1' & '_phase2' added to it",
+    )
+
+    return parser.parse_args()
 
 
 class Objective:
@@ -26,13 +36,17 @@ class Objective:
         request_rate: float = 60.0,
         max_completion_tokens: int = 8192,
         model_url: str = "http://localhost:8000/v1",
+        model_id: str = "Llama-3.1-8B",
         seed=None,
     ) -> None:
         if not prompts:
             raise ValueError("Prompts must not be empty")
 
         self.client = OpenAI(api_key="EMPTY", base_url=model_url)
-        self.model_id = self.client.models.list().data[0].id
+        available_models = [model.id for model in self.client.models.list().data]
+        if model_id not in available_models:
+            raise ValueError(f"{model_id} is not in {available_models=:}")
+        self.model_id = model_id
 
         self.n_evaluations = n_evaluations
         self.prompts = prompts
@@ -81,7 +95,7 @@ class Objective:
     ) -> float:
         print(
             f"  {datetime.now()} Starting evaluation {eval_id+1}: "
-            + f"{temperature:.02f}, {min_p:.02f}, "
+            + f"{temperature:.03f}, {min_p:.02f}, "
             + f"{repetition_penalty:.02f}"
         )
         arrival_times = np.cumsum(
@@ -97,9 +111,18 @@ class Objective:
                 range(self.n_requests), arrival_times, prompts
             ):
                 current_time = (datetime.now() - start).total_seconds()
-                while arrival_time - current_time > 0.05:
-                    sleep(0.1)
-                    current_time += 0.1
+                wait_time = arrival_time - current_time
+                if wait_time > 0.0:
+                    sleep(wait_time)
+                else:
+                    print(
+                        f"  {datetime.now()} Request {i:04} fell behind "
+                        + f"schedule by {wait_time}"
+                    )
+
+                # while arrival_time - current_time > 0.05:
+                #    sleep(0.1)
+                #    current_time += 0.1
 
                 futures[
                     executor.submit(
@@ -149,7 +172,7 @@ class Objective:
             "temperature",
             self.temperature_min,
             self.temperature_max,
-            step=0.05,
+            step=0.025,
         )
         min_p = trial.suggest_float(
             "min_p",
@@ -164,7 +187,7 @@ class Objective:
             step=0.01,
         )
 
-        print(f"Trial: {temperature=:.02f}, {min_p=:.02f}, {repetition_penalty=:.02f}")
+        print(f"Trial: {temperature=:.03f}, {min_p=:.02f}, {repetition_penalty=:.02f}")
         results = [
             self.run_trial(eval_id, temperature, min_p, repetition_penalty)
             for eval_id in range(self.n_evaluations)
@@ -173,20 +196,22 @@ class Objective:
         return np.mean(results), repetition_penalty
 
 
-def make_pareto_plot(study, filename: str, default_trial_number: int = 0) -> None:
+def make_pareto_plot(study, filename: str, special_trials: list[int] = []) -> None:
     axes = optuna.visualization.matplotlib.plot_pareto_front(
         study,
         target_names=["Failure Rate (%)", "Reptition Penalty"],
     )
-    # Add a marker around the vLLM default trial
-    axes.plot(
-        *study.trials[default_trial_number].values,
-        "s",
-        markersize=8,
-        markerfacecolor="none",
-        markeredgecolor="black",
-        markeredgewidth=2,
-    )
+    # Add black boxes trials listed in special_trials
+    for trial_number in special_trials:
+        axes.plot(
+            *study.trials[trial_number].values,
+            "s",
+            markersize=8,
+            markerfacecolor="none",
+            markeredgecolor="black",
+            markeredgewidth=2,
+        )
+
     figure = axes.get_figure()
     figure.savefig(filename)
 
@@ -245,6 +270,9 @@ def main():
         --gpu_memory_utilization 0.95 \
         --served-model-name Llama-3.1-8B
     """
+    args = parse_cmd_line()
+    study_name_base = args.study_name_base
+
     with open("test_prompts.txt", "r") as f:
         prompts = [line.strip() for line in f]
 
@@ -256,13 +284,13 @@ def main():
         + "structured in a logical way. Your answer should have at least 3000 words."
     )
 
-    # vLLM, version 0.6.5 or earlier, which is what we current run in production
+    # vLLM, version 0.6.5 or earlier, which is what we currently run in production
     vllm_defaults = {"temperature": 0.7, "min_p": 0.0, "repetition_penalty": 1.0}
 
     ## Phase 1: Find Candidate Trials for longer runs in Phase 2
     # Create the initial study
     study = optuna.create_study(
-        study_name="mad_llama_disease_phase1",
+        study_name=f"{study_name_base}_phase1",
         storage="sqlite:///mad_llama_disease.db",
         directions=["minimize", "minimize"],
         sampler=optuna.samplers.TPESampler(),
@@ -281,30 +309,38 @@ def main():
         n_trials=24,
     )
 
-    make_pareto_plot(study, "images/pareto_front_phase1.png", default_trial_number=0)
+    make_pareto_plot(
+        study,
+        f"images/{study_name_base}_phase1_pareto_front.png",
+        special_trials=[0],
+    )
 
     ## Phase 2: Longer runs for the most promising trials + vLLM default parameters
     candidate_trials, candidate_failure_rates = get_candidate_trials(
         study, n_candidates=10
     )
+
+    print("Selected candidates")
     for candidate_trial, candidate_failure_rate in zip(
         candidate_trials, candidate_failure_rates
     ):
-        print("Selected candidates")
-        print(f"{candidate_failure_rate:.04f}", end="")
+        print(f" {candidate_failure_rate:.04f}", end=", ")
         pprint(candidate_trial)
 
     study2 = optuna.create_study(
-        study_name="mad_llama_disease_phase2",
-        storage="sqlite:///mad_llama_disease.db",
+        study_name=f"{study_name_base}_phase2",
+        storage="sqlite:///test.db",
         directions=["minimize", "minimize"],
         sampler=optuna.samplers.TPESampler(),
     )
     # Add in vLLM default
     study2.enqueue_trial(vllm_defaults)
-    # Add in candidate trials
+    n_trials = 1
+    # Add in candidate trials if they don't match vLLM default
     for params in candidate_trials:
-        study2.enqueue_trial(params)
+        if params != vllm_defaults:
+            study2.enqueue_trial(params)
+            n_trials += 1
 
     study2.optimize(
         Objective(
@@ -312,10 +348,12 @@ def main():
             prompts=prompts,
             system_prompt=system_prompt,
         ),
-        n_trials=len(candidate_trials) + 1,
+        n_trials=n_trials,
     )
 
-    make_pareto_plot(study, "images/pareto_front_phase2.png", default_trial_number=0)
+    make_pareto_plot(
+        study2, f"images/{study_name_base}_phase2_pareto_front.png", special_trials=[0]
+    )
 
 
 if __name__ == "__main__":
