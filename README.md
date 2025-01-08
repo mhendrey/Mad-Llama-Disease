@@ -86,7 +86,7 @@ The top candidates for phase 2's longer testing are shown in the table. The top 
 |       0.000      |      1.08          |   0.10   |     0.75    |
 |       0.000      |      1.09          |   0.05   |     0.85    |
 |       0.000      |      1.1           |   0.03   |     0.70    |
-|      *0.50*      |     *1.00*         |  *0.00*  |     0.70    |
+|      *0.500*      |     *1.00*         |  *0.00*  |     0.70    |
 
 
 ## Phase 2
