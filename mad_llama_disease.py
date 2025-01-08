@@ -329,7 +329,7 @@ def main():
 
     study2 = optuna.create_study(
         study_name=f"{study_name_base}_phase2",
-        storage="sqlite:///test.db",
+        storage="sqlite:///mad_llama_disease.db",
         directions=["minimize", "minimize"],
         sampler=optuna.samplers.TPESampler(),
     )
