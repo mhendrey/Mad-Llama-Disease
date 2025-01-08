@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+import json
 import numpy as np
 from openai import OpenAI
 import optuna
@@ -192,19 +193,24 @@ def main():
     )
 
     study = optuna.create_study(
-        study_name="mad_llama_disease",
+        study_name="mad_llama_disease_phase2",
         storage="sqlite:///mad_llama_disease.db",
         directions=["minimize", "minimize"],
         sampler=optuna.samplers.TPESampler(),
     )
 
+    # Get candidate trials from phase 1 and add them to the study queue
+    trials_params = json.load(open("candidate_trials.json", "r"))
+    for params in trials_params:
+        study.enqueue_trial(params)
+
     study.optimize(
         Objective(
-            n_evaluations=5,
+            n_evaluations=15,
             prompts=prompts,
             system_prompt=system_prompt,
         ),
-        n_trials=24,
+        n_trials=len(trials_params),
     )
 
     for i, t in enumerate(study.best_trials):

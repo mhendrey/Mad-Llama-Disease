@@ -60,7 +60,30 @@ failure_rate = 100.0 * n_failed / self.n_requests
 
 To protect against GPU memory issues, we split each trial of 600 requests into 5 independent runs of 120 requests each. The final failure rate for a parameter combination is the average across these runs, providing a more robust estimate of the true failure rate.
 
-## Results
+We utilize the `optuna.sampler.TPESampler` for a total of 24 trials. The first 10 trials randomly select parameter sets which leaves the remaining 14 trials to leverage the TPE sampler.
+
+## Initial Results
+Let's see the Pareto Surface plot to see how we did. The trials that lie on the Pareto Surface are colored red. Note that there are actually three trials that lie on the Pareto surface, but two of them have the exact same failure rate and repetition penalty (0.0, 1.03).
+
+![Pareto Surface Plot](images/pareto_surface.png)
+
+As we see in the figure, there are a number of trials that had a failure rate of 0.0%. While we optimized to minimize both the failure rate and the repetition_penalty, let's take a look at the trials that had a failure rate of 0.0. These would make good candidates for further testing to see if the zero failure rates hold up under longer testing. In addition, we also list Trial 21 (italicized) which matches the default vLLM parameters that are currently used in our production system and included here for comparison. Trial 18 and 16 (bold) lie on the Pareto surface in the figure above.
+
+| Trial  | Temperature |  min_p  | repetition_penalty | Failure Rate (%) |
+|:------:|:-----------:|:-------:|:------------------:|:----------------:|
+| **18** |  **0.8**    | **0.0** |  **1.03**          |      **0.0**     |
+| **16** |  **0.8**    | **0.03**|  **1.03**          |      **0.0**     |
+|  20    |    0.8      |   0.03  |    1.04            |        0.0       |
+|  4     |    0.85     |   0.06  |    1.05            |        0.0       |
+|  15    |    0.9      |   0.07  |    1.05            |        0.0       |
+|  8     |    0.9      |   0.01  |    1.06            |        0.0       |
+|  9     |    0.9      |   0.02  |    1.07            |        0.0       |
+|  1     |    0.85     |   0.1   |    1.07            |        0.0       |
+|  14    |    0.75     |   0.1   |    1.08            |        0.0       |
+|  12    |    0.85     |   0.05  |    1.09            |        0.0       |
+|  7     |    0.7      |   0.03  |    1.10            |        0.0       |
+| *22*   |   *0.7*     |  *0.0*  |   *1.00*           |       *0.5*      |
+
 
 [RESULTS TO BE INSERTED WHEN EXPERIMENT COMPLETES]
 
