@@ -14,93 +14,99 @@ When running Llama-3.1 models in production (both 8B and 70B variants), we've ob
 
 ## Initial Mitigation
 
-The most straightforward solution to this problem is setting the `max_tokens` parameter in the request. By limiting generation to something like 8,192 tokens, we can prevent the worst impacts of this failure mode. While this is a crucial first step that we recommend implementing immediately, we wanted to explore whether we could reduce the probability of this failure occurring in the first place.
+The most straightforward solution to this problem is setting the `max_tokens` parameter in the request. By limiting generation to something like 8,192 tokens, we can prevent the worst impacts of this failure mode. While this is a crucial first step that we recommend implementing immediately, we wanted to explore whether we could reduce the probability of this failure occurring in the first place by using a better set of sampling parameters.
 
-## Experimental Setup
+## Optimization Experiment
 
-We designed an experiment to investigate how three key request sampling parameters affect the failure rate:
+We designed an optimization experiment to investigate how three key request sampling parameters may affect the failure rate of the LLM. Each trial in our experiment tests a specific combination of:
 
 1. **temperature**: Controls sampling randomness (higher values = more random)
 2. **min_p**: Sets the minimum probability threshold for token consideration
 3. **repetition_penalty**: Penalizes tokens based on their previous appearances
 
-### Technical Details
-
-- Model: 4-bit quantized Llama-3.1-8B (matching our production environment)
-- Request Rate: 60 requests/minute
-- Trial Size: 600 requests per parameter combination
-- Trial Structure: 5 independent runs of 120 requests each (to protect GPU VRAM)
-- Optimization Framework: Optuna for multi-objective optimization
-
-### Optimization Goals
-
 We defined two objectives for our optimization:
 
-1. **Primary**: Minimize the failure rate (percentage of requests hitting max tokens)
-2. **Secondary**: Minimize deviation from the default repetition_penalty (1.0)
+1. **Primary**: Minimize the failure rate (percentage of requests generating `max_tokens` tokens)
+2. **Secondary**: Minimize deviation from the default repetition_penalty value of 1.0
 
 The second objective reflects our preference to keep parameters close to their defaults unless we see significant benefits from changing them.
 
-## Experimental Implementation
+### Methodology
 
-Each trial in our experiment tests a specific combination of temperature, min_p, and repetition_penalty parameters. To simulate real-world conditions, we generate requests at a rate of 60 per minute using exponentially distributed arrival times. This approach helps us understand how the model behaves under production-like conditions.
+The experiment used Optuna to optimize Llama-3.1's sampling parameters through a two-phase approach aimed at minimizing token generation failures. Here's how the optimization process worked:
 
-To properly stress test the model's behavior, we carefully designed our prompts to encourage longer responses. We used a system prompt that frames the model as a student taking an exam, specifically requesting well-reasoned answers of at least 3,000 words. This approach helps us better evaluate the model's tendency to generate endlessly under heavy loads, as shorter responses might not sufficiently exercise the failure mode we're investigating.
+Phase 1: Parameter Space Exploration
+* The study explored three key sampling parameters:
+  * Temperature (range: 0.7-0.9)
+  * min_p (range: 0.0-0.1)
+  * Repetition Penalty (range: 1.0-1.1)    
+* Initial exploration consisted of 24 trials using Optuna's TPE Sampler
+  * First trial are vLLM's defaults (temperature=0.7, min_p=0.0, repetition_penalty=1.0)
+  * Next 9 trials are randomly selected
+  * Final 14 trials are selected by the TPE Sampler
+* Each trial simulated real-world conditions by:
+  * Sending requests at an exponentially-distributed rate of 60 per minute
+  * Total of 600 requests (~10 minutes), broken into 5 independent sets to prevent the LLM server from crashing
+  * Using randomly sampled prompts asking for lengthy exam responses
+  * Measuring failure rate based on percentage of requests whose number of generated tokens equaled `max_tokens` (8,192)
 
-A key aspect of our implementation is how we evaluate the failure rate. For each request in a trial, we track whether it generates the maximum allowed number of tokens (8,192 in our case). Here's a snippet showing how we calculate the failure rate for a single trial:
+Phase 2: Deep Evaluation
+* Selected the 10 most promising parameter combinations from Phase 1
+  * Sorted Phase 1 trials by failure rate, repetition_penalty, min_p, and temperature to determine the most promising
+* Ran these parameter combinations each for a total of 1,800 requests (~30 minutes) to refine failure rates
+* Maintained vLLM's default parameters (temperature=0.7, min_p=0.0, repetition_penalty=1.0) as a baseline throughout
 
-```python
-n_failed = 0
-if completion_tokens == self.max_completion_tokens:
-    n_failed += 1
-    print(f"  Failed {request_id=}")
 
-failure_rate = 100.0 * n_failed / self.n_requests
-```
+## 4-bit Quantized Llama-3.1-8B
+In the production server, we run a 4-bit quantized version of the Llama-3.1 models. This saves significant GPU VRAM, optimize total token throughput, and has [limited impact](https://neuralmagic.com/blog/we-ran-over-half-a-million-evaluations-on-quantized-llms-heres-what-we-found/) on the model's outputs. Thus we begin our experiments with this version of the [Llama-3.1-8B model](https://huggingface.co/neuralmagic/Meta-Llama-3.1-70B-Instruct-quantized.w4a16).
 
-To protect against GPU memory issues, we split each trial of 600 requests into 5 independent runs of 120 requests each. The final failure rate for a parameter combination is the average across these runs, providing a more robust estimate of the true failure rate.
+### Phase 1
 
-We utilize the `optuna.sampler.TPESampler` for a total of 24 trials. The first 10 trials randomly select parameter sets which leaves the remaining 14 trials to leverage the TPE sampler.
+![Phase 1 Pareto Plot](images/int4_pareto_plot_phase1.png)
 
-## Initial Results
-Let's see the Pareto Surface plot to see how we did. The trials that lie on the Pareto Surface are colored red. A trial run with the vLLM default sampling parameters (temperature=0.7, min_p=0.0, repetition_penalty=0.0) has a black box around it. Note that there are actually three trials that lie on the Pareto surface, but two of them have the exact same failure rate and repetition penalty (0.0, 1.03).
+This image shows the Pareto plot for the 24 trials that were run. The trials that lie on the Pareto frontier
+are colored red and those that do not are colored blue. The trial run with the vLLM defaults has a black box around it and notice that the vLLM defaults have a relatively high failure rate of 0.5% for Llama-3.1-8B. Note that there are actually three trials that lie on the Pareto frontier, but two of them have the exact same failure rate and repetition penalty (0.0, 1.03).
 
-![Pareto Surface Plot](images/int4_pareto_plot_phase1.png)
+### Top Trials
 
-As we see in the figure, there are a number of trials that had a failure rate of 0.0%. While we optimized to minimize both the failure rate and the repetition_penalty, let's take a look at the trials that had a failure rate of 0.0. These would make good candidates for further testing to see if the zero failure rates hold up under longer testing. In addition, we also list Trial 22 (italicized) which matches the default vLLM parameters that are currently used in our production system and included here for comparison. Trial 18 and 16 (bold) lie on the Pareto surface in the figure above.
+As we see in the figure, there are a number of trials that had a failure rate of 0.0%. While we optimized to minimize both the failure rate and the repetition penalty, the failure rate is of much more importance to us.
 
-| Trial  | Temperature |  min_p  | repetition_penalty | Failure Rate (%) |
-|:------:|:-----------:|:-------:|:------------------:|:----------------:|
-| **18** |  **0.8**    | **0.0** |  **1.03**          |      **0.0**     |
-| **16** |  **0.8**    | **0.03**|  **1.03**          |      **0.0**     |
-|  20    |    0.8      |   0.03  |    1.04            |        0.0       |
-|  4     |    0.85     |   0.06  |    1.05            |        0.0       |
-|  15    |    0.9      |   0.07  |    1.05            |        0.0       |
-|  8     |    0.9      |   0.01  |    1.06            |        0.0       |
-|  9     |    0.9      |   0.02  |    1.07            |        0.0       |
-|  1     |    0.85     |   0.1   |    1.07            |        0.0       |
-|  14    |    0.75     |   0.1   |    1.08            |        0.0       |
-|  12    |    0.85     |   0.05  |    1.09            |        0.0       |
-|  7     |    0.7      |   0.03  |    1.10            |        0.0       |
-| *22*   |   *0.7*     |  *0.0*  |   *1.00*           |       *0.5*      |
+The top candidates for phase 2's longer testing are shown in the table. The top two, in bold, are along the Pareto frontier while the vLLM default, in italics, is at the bottom for comparison purposes.
+
+| Failure Rate (%) | Repetition Penalty |   min_p  | Temperature |
+|:----------------:|:------------------:|:--------:|:-----------:|
+|     **0.000**    |    **1.03**        | **0.00** |   **0.80**  |
+|     **0.000**    |    **1.03**        | **0.03** |   **0.80**  |
+|       0.000      |      1.04          |   0.03   |     0.80    |
+|       0.000      |      1.05          |   0.06   |     0.85    |
+|       0.000      |      1.05          |   0.07   |     0.90    |
+|       0.000      |      1.06          |   0.01   |     0.90    |
+|       0.000      |      1.07          |   0.02   |     0.90    |
+|       0.000      |      1.07          |   0.10   |     0.85    |
+|       0.000      |      1.08          |   0.10   |     0.75    |
+|       0.000      |      1.09          |   0.05   |     0.85    |
+|       0.000      |      1.1           |   0.03   |     0.70    |
+|      *0.50*      |     *1.00*         |  *0.00*  |     0.70    |
+
 
 ## Phase 2
-For the second phase of this work, we do a longer run on the parameters listed in the table above. For each configuration, we do 1800 requests (~30 minutes at our rate of 60 requests / minute). For these longer runs, we see that some of the configurations' failure rates increases above 0.0. 
+For the second phase of this work, we do a longer run on the parameters listed in the table above. For each configuration, we do 1800 requests (~30 minutes at our rate of 60 requests / minute). This is three times longer the trials in Phase 1 (600 requests for ~10 minutes).
 
 ![Pareto Surface for longer runs](images/int4_pareto_plot_phase2.png)
 
-This leaves us with the following parameter values that never encountered our failure to generate a stop token as shown in the table below. Again, we include the vLLM default (italics) values which has a failure rate of 0.72%.  Our recommend settings are the top choice (bold) since it needs just a small repetition penalty to stop the failures from occurring.
+For these longer runs, we see that some of the configurations' failure rates increases above 0.0 and that the vLLM default failure rate increases a little from 0.5% in phase 1 to 0.72% in phase 2.
 
-| Temperature |  min_p  | repetition_penalty | Failure Rate (%) |
-|:-----------:|:-------:|:------------------:|:----------------:|
-|   **0.8**   | **0.00** |  **1.03**         |   **0.00**       |
-|     0.9     |  0.07   |    1.05            |     0.00         |
-|     0.9     |  0.01   |    1.06            |     0.00         |
-|     0.75    |  0.10   |    1.08            |     0.00         |
-|     0.85    |  0.05   |    1.09            |     0.00         |
-|     0.70    |  0.03   |    1.10            |     0.00         |
-|    *0.70*   | *0.00*  |   *1.00*           |    *0.72*        |
+This leaves us with the following parameter values that never encountered the failure to generate a stop token as shown in the table below. Again, we include the vLLM default (italics) for comparison.  Our recommended settings are the top choice (bold) since it needs just a small repetition penalty to stop the failures from occurring.
 
+| Failure Rate (%) | Repetition Penalty |   min_p  | Temperature |
+|:----------------:|:------------------:|:--------:|:-----------:|
+|    **0.000**     |     **1.03**       | **0.00** |  **0.80**   |
+|      0.000       |       1.05         |   0.07   |    0.90     |
+|      0.000       |       1.06         |   0.01   |    0.90     |
+|      0.000       |       1.08         |   0.10   |    0.75     |
+|      0.000       |       1.09         |   0.05   |    0.85     |
+|      0.000       |       1.10         |   0.03   |    0.70     |
+|     *0.722*      |      *1.00*        |  *0.00*  |   *0.70*    |
 
 ## Implementation Recommendations
 
@@ -108,7 +114,3 @@ Based on our initial findings, we recommend a two-pronged approach:
 
 1. **Immediate Action**: Implement max_tokens limit of 8,192 tokens to prevent system crashes
 2. **Parameter Optimization**: Raise the temperature to 0.8 and apply a small repetition penalty of 1.03
-
-## Future Work
-
-This experiment focused on the 4-bit quantized Llama-3.1-8B model. It would interesting to see if similar behavior is observed when using an 8-bit quantized model. 
