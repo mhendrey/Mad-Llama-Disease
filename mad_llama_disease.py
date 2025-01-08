@@ -1,8 +1,11 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+import json
+import matplotlib.pyplot as plt
 import numpy as np
 from openai import OpenAI
 import optuna
+import pandas as pd
 from pprint import pprint
 from time import sleep
 
@@ -170,6 +173,68 @@ class Objective:
         return np.mean(results), repetition_penalty
 
 
+def make_pareto_plot(study, filename: str, default_trial_number: int = 0) -> None:
+    axes = optuna.visualization.matplotlib.plot_pareto_front(
+        study,
+        target_names=["Failure Rate (%)", "Reptition Penalty"],
+    )
+    # Add a marker around the vLLM default trial
+    axes.plot(
+        *study.trials[default_trial_number].values,
+        "s",
+        markersize=8,
+        markerfacecolor="none",
+        markeredgecolor="black",
+        markeredgewidth=2,
+    )
+    figure = axes.get_figure()
+    figure.savefig(filename)
+
+
+def get_candidate_trials(
+    study, n_candidates: int = 10
+) -> tuple[list[dict], list[float]]:
+    """
+    Sort trials by failure rate, repetition penalty, min_p, and temperature.
+    Drop any duplicate parameter sets (keeping lowest failure rate) and return
+    the top n_candidates parameters and their corresponding failure rates.
+
+    Parameters
+    ----------
+    study : optuna.study.Study
+    n_candidates : int, optional
+        Number of top scoring trials to return, by default 10
+
+    Returns
+    -------
+    tuple[list[dict], list[float]]
+        List of candidate trial parameters and corresponding failure rates
+    """
+    df = study.trials_dataframe()[
+        ["values_0", "params_repetition_penalty", "params_min_p", "params_temperature"]
+    ].rename(
+        columns={
+            "values_0": "failure_rate",
+            "params_repetition_penalty": "repetition_penalty",
+            "params_min_p": "min_p",
+            "params_temperature": "temperature",
+        }
+    )
+
+    df_candidates = (
+        df.sort_values(["failure_rate", "repetition_penalty", "min_p", "temperature"])
+        .drop_duplicates(["repetition_penalty", "min_p", "temperature"], keep="first")
+        .head(n_candidates)
+    )
+
+    candidate_trials = df_candidates[
+        ["repetition_penalty", "temperature", "min_p"]
+    ].to_dict(orient="records")
+    candidate_failure_rates = df_candidates.failure_rate.tolist()
+
+    return candidate_trials, candidate_failure_rates
+
+
 def main():
     """
     Launch vLLM with the following command:
@@ -191,12 +256,21 @@ def main():
         + "structured in a logical way. Your answer should have at least 3000 words."
     )
 
+    # vLLM, version 0.6.5 or earlier, which is what we current run in production
+    vllm_defaults = {"temperature": 0.7, "min_p": 0.0, "repetition_penalty": 1.0}
+
+    ## Phase 1: Find Candidate Trials for longer runs in Phase 2
+    # Create the initial study
     study = optuna.create_study(
-        study_name="mad_llama_disease",
+        study_name="mad_llama_disease_phase1",
         storage="sqlite:///mad_llama_disease.db",
         directions=["minimize", "minimize"],
         sampler=optuna.samplers.TPESampler(),
     )
+
+    # Let's add in vLLM's default parameters to the study's queue so we can
+    # have it evaluated for comparision sake.
+    study.enqueue_trial(vllm_defaults)
 
     study.optimize(
         Objective(
@@ -207,10 +281,41 @@ def main():
         n_trials=24,
     )
 
-    for i, t in enumerate(study.best_trials):
-        print(f"Best Trial {i:02} has failure rate = {t.values[0]:.03f}")
-        pprint(t.params)
-        print("")
+    make_pareto_plot(study, "images/pareto_front_phase1.png", default_trial_number=0)
+
+    ## Phase 2: Longer runs for the most promising trials + vLLM default parameters
+    candidate_trials, candidate_failure_rates = get_candidate_trials(
+        study, n_candidates=10
+    )
+    for candidate_trial, candidate_failure_rate in zip(
+        candidate_trials, candidate_failure_rates
+    ):
+        print("Selected candidates")
+        print(f"{candidate_failure_rate:.04f}", end="")
+        pprint(candidate_trial)
+
+    study2 = optuna.create_study(
+        study_name="mad_llama_disease_phase2",
+        storage="sqlite:///mad_llama_disease.db",
+        directions=["minimize", "minimize"],
+        sampler=optuna.samplers.TPESampler(),
+    )
+    # Add in vLLM default
+    study2.enqueue_trial(vllm_defaults)
+    # Add in candidate trials
+    for params in candidate_trials:
+        study2.enqueue_trial(params)
+
+    study2.optimize(
+        Objective(
+            n_evaluations=15,
+            prompts=prompts,
+            system_prompt=system_prompt,
+        ),
+        n_trials=len(candidate_trials) + 1,
+    )
+
+    make_pareto_plot(study, "images/pareto_front_phase2.png", default_trial_number=0)
 
 
 if __name__ == "__main__":

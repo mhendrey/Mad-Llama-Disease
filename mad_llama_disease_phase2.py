@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import json
+import matplotlib.pyplot as plt
 import numpy as np
 from openai import OpenAI
 import optuna
