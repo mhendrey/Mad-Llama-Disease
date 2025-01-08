@@ -94,7 +94,7 @@ For the second phase of this work, we do a longer run on the parameters listed i
 
 ![Pareto Surface for longer runs](images/int4_pareto_plot_phase2.png)
 
-For these longer runs, we see that some of the configurations' failure rates increases above 0.0 and that the vLLM default failure rate increases a little from 0.5% in phase 1 to 0.72% in phase 2.
+For these longer runs, we see that five out of the eleven parameter configurations' failure rates increases above 0.0 and that the vLLM default failure rate increases a little from 0.5% in phase 1 to 0.722% in phase 2.
 
 This leaves us with the following parameter values that never encountered the failure to generate a stop token as shown in the table below. Again, we include the vLLM default (italics) for comparison.  Our recommended settings are the top choice (bold) since it needs just a small repetition penalty to stop the failures from occurring.
 
