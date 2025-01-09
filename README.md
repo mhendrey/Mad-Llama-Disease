@@ -114,3 +114,9 @@ Based on our findings, we recommend a two-step approach:
 
 1. **Immediate Action**: Set the `max_tokens` request parameter to 8,192 tokens to prevent system crashes
 2. **Parameter Optimization**: Use temperature=0.8 and repetition_penalty=1.03, which achieved optimal results with minimal parameter adjustment
+
+## Future Steps
+
+There are two next steps that should probably be taken. The first is to calculate how the LLM performs with these suggested request parameters on the various benchmarks to ensure that there isn't a noticable drop in performance. This is would be similar to what Neural Magic did with their [quantization study](https://neuralmagic.com/blog/we-ran-over-half-a-million-evaluations-on-quantized-llms-heres-what-we-found/).
+
+Redo this experiment using an 8-bit quantized model instead of the 4-bit to see if there is a noticable change in performance caused by the lower quantization.
