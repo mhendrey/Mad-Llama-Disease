@@ -13,7 +13,7 @@ While running Llama-3.1 models in production (both 8B and 70B variants), we've o
 
 ## Initial Mitigation
 
-The simplest solution is to set the `max_tokens` parameter in the request. By limiting generation to 8,192 tokens, we can prevent the worst impacts of this failure mode. While this is a crucial first step that we recommend implementing immediately, we wanted to explore whether we could reduce the probability of this failure through optimized sampling parameters.
+By [default](https://github.com/vllm-project/vllm/blob/730e9592e97c643474aa44e9d3dbe6f55c4b9ad9/vllm/entrypoints/openai/serving_chat.py#L190), vLLM sets the `max_tokens` to be equal to the remaining tokens in the context window. The simplest solution is to set the `max_tokens` parameter in the request. By limiting generation to 8,192 tokens, we can prevent the worst impacts of this failure mode. While this is a crucial first step that we recommend implementing immediately, we wanted to explore whether we could reduce the probability of this failure through optimized sampling parameters.
 
 This is also inline with the major commercial models as well
 
