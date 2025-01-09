@@ -1,0 +1,14 @@
+name: mad-llama-disease
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python ==3.12
+  - ipython
+  - matplotlib
+  - numpy
+  - optuna
+  - optuna-dashboard
+  - pandas
+  - tabulate
+  - pip
