@@ -6,7 +6,7 @@ Large Language Models (LLMs) have become critical components in many organizatio
 
 ## The Problem
 
-While running Llama-3.1 models in production (both 8B and 70B variants), we've observed an interesting failure mode, which others in the LLM community of observed too, where the model occasionally fails to generate an end-of-string token. The model starts off generating acceptable outputs, but eventually degrades into endless gibberish. This causes the model to continue generating tokens until it reaches the maximum context window size of 128K tokens, resulting in two significant problems:
+Like many teams, we leverage the [vLLM engine](https://docs.vllm.ai) for running self-hosted LLMs in production. While running Llama-3.1 models (both 8B and 70B variants), we've observed an interesting failure mode, which others in the LLM community of observed too, where the model occasionally fails to generate an end-of-string token. The model starts off generating acceptable outputs, but eventually degrades into endless gibberish. This causes the model to continue generating tokens until it reaches the maximum context window size of 128K tokens, resulting in two significant problems:
 
 1. **Performance Impact**: Generating 128K tokens of mostly gibberish takes approximately 30 minutes, creating an unacceptable user experience
 2. **Stability Issues**: The extended generation fills up the GPU VRAM with the KV cache, eventually causing the container to crash (occurring 7-10 times daily)

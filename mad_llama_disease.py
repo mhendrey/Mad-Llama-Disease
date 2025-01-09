@@ -114,7 +114,7 @@ class Objective:
                 wait_time = arrival_time - current_time
                 if wait_time > 0.0:
                     sleep(wait_time)
-                else:
+                elif abs(wait_time) > 0.01:
                     print(
                         f"  {datetime.now()} Request {i:04} fell behind "
                         + f"schedule by {wait_time}"
