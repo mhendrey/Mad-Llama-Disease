@@ -17,8 +17,8 @@ By [default](https://github.com/vllm-project/vllm/blob/730e9592e97c643474aa44e9d
 
 This is also inline with the major commercial models as well
 
-* [Anthropic](https://docs.anthropic.com/en/docs/about-claude/models#model-comparison-table)
-* [Gemini](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/models#gemini-1.5-pro),
+* [Anthropic](https://docs.anthropic.com/en/docs/about-claude/models#model-comparison-table) (8192)
+* [Gemini](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/models#gemini-1.5-pro) (8192)
 * [OpenAI](https://platform.openai.com/docs/models) (ranges from 4K-16K dpending on the model)
 
 ## Optimization Experiment
