@@ -13,13 +13,13 @@ Like many teams, we leverage the [vLLM engine](https://docs.vllm.ai) for running
 
 ## Initial Mitigation
 
-By [default](https://github.com/vllm-project/vllm/blob/730e9592e97c643474aa44e9d3dbe6f55c4b9ad9/vllm/entrypoints/openai/serving_chat.py#L190), vLLM sets the `max_tokens` to be equal to the remaining tokens in the context window. The simplest solution is to set the `max_tokens` parameter in the request. By limiting generation to 8,192 tokens, we can prevent the worst impacts of this failure mode. While this is a crucial first step that we recommend implementing immediately, we wanted to explore whether we could reduce the probability of this failure through optimized sampling parameters.
-
-This is also inline with the major commercial models as well
+By [default](https://github.com/vllm-project/vllm/blob/730e9592e97c643474aa44e9d3dbe6f55c4b9ad9/vllm/entrypoints/openai/serving_chat.py#L190), vLLM sets the `max_tokens` to be equal to the remaining tokens in the context window. The simplest solution is to set the `max_tokens` parameter in the request. By limiting generation to 8,192 tokens, we can prevent the worst impacts of this failure mode. This is also inline with the major commercial models as well:
 
 * [Anthropic](https://docs.anthropic.com/en/docs/about-claude/models#model-comparison-table) (8192)
 * [Gemini](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/models#gemini-1.5-pro) (8192)
 * [OpenAI](https://platform.openai.com/docs/models) (ranges from 4K-16K dpending on the model)
+
+While this is a crucial first step that we recommend implementing immediately, we wanted to explore whether we could reduce the probability of this failure through optimized sampling parameters.
 
 ## Optimization Experiment
 
