@@ -1,4 +1,4 @@
-# Mad-Llama-Disease: Investigating and Fixing Endless Generation Issues in Llama-3.1
+# Mad Llama Disease: Investigating and Fixing Endless Generation Issues in Llama-3.1
 
 ## Introduction
 
