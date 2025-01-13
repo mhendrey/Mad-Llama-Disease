@@ -117,7 +117,7 @@ Based on our findings, we recommend a two-step approach:
 1. **Immediate Action**: Set the `max_tokens` request parameter for all client requests to 8,192 tokens to reduce the likelihood of a system crash
 2. **Parameter Optimization**: Set min_p=0.0113 and repetition_penalty=1.0498, which achieved lowest failure rate across all temperatures between 0.5 and 1.0, for all client requests
 
-Though restricting `max_tokens` to 8,192 will help, if the failure rate is high enough and traffic to the serve is high enough, then the system may still crash. We note that the temperature=1.0, min_p=0.0, and repetition_penalty=1.0 had a high enough failure rate to force us to alter request rates to enable the trial to complete with out crashing the vLLM server.
+Though restricting `max_tokens` to 8,192 will help, if the failure rate is high enough and traffic to the serve is high enough, then the system may still crash. We note that the temperature=1.0, min_p=0.0, and repetition_penalty=1.0 had a high enough failure rate to force us to alter request rates to enable the trial to complete without crashing the vLLM server.
 
 ## Future Steps
 These experiments did not take into account the request parameters' effect on the quality of the LLMs output. A natural next step would be to use the optimal request parameters found on the various LLM benchmarks to ensure that there isn't a noticeable drop in performance. This would be similar to what Neural Magic did with their [quantization study](https://neuralmagic.com/blog/we-ran-over-half-a-million-evaluations-on-quantized-llms-heres-what-we-found/).
