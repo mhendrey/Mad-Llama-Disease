@@ -121,3 +121,6 @@ Though restricting `max_tokens` to 8,192 will help, if the failure rate is high 
 
 ## Future Steps
 These experiments did not take into account the request parameters' effect on the quality of the LLMs output. A natural next step would be to use the optimal request parameters found on the various LLM benchmarks to ensure that there isn't a noticeable drop in performance. This would be similar to what Neural Magic did with their [quantization study](https://neuralmagic.com/blog/we-ran-over-half-a-million-evaluations-on-quantized-llms-heres-what-we-found/).
+
+## Code
+All code used to reproduce these experiments is available in our [Mad Llama Disease repository](https://github.com/mhendrey/Mad-Llama-Disease).
