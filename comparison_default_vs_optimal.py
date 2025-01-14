@@ -103,21 +103,21 @@ def main():
     else:
         n_trials = 0
         for temperature in np.linspace(0.5, 1.0, 6):
-            # Add in default values
-            study.enqueue_trial(
-                {
-                    "temperature": temperature,
-                    "min_p": 0.0,
-                    "repetition_penalty": 1.0,
-                }
-            )
-            n_trials += 1
             # Add in optimal values
             study.enqueue_trial(
                 {
                     "temperature": temperature,
                     "min_p": min_p,
                     "repetition_penalty": repetition_penalty,
+                }
+            )
+            n_trials += 1
+            # Add in default values
+            study.enqueue_trial(
+                {
+                    "temperature": temperature,
+                    "min_p": 0.0,
+                    "repetition_penalty": 1.0,
                 }
             )
             n_trials += 1
