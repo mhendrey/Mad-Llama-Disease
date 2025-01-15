@@ -99,7 +99,7 @@ In our final experiment, we compare the performance of using the default min_p a
 
 ![Optimal Params vs. Defaults across temperature](images/int4_comparison_optimal_vs_defaults.png)
 
-This figure shows the dramatic improvement in the failure rate across the entire range of temperatures (0.5 - 1.0). Shockingly, the default parameters at temperature 1.0 have a very high failure rate of 4.92% which required doing a separate run in order to ensure we didn't run out of GPU VRAM.
+This figure shows the dramatic improvement in the failure rate across the entire range of temperatures (0.5 - 1.0). Shockingly, the default parameters at temperature 1.0 have a very high failure rate of 4.92% which required doing a separate run in order to ensure we didn't run out of GPU VRAM. In addition, we repeated the experiment using the FP8 version of the model, but keeping the optimal parameters found from the int-4 robust experiment. These are shown for comparison purposes.
 
 The contingency table statistically validates the improvement of the optimal over the default parameters for min_p and repetition_penalty across the various temperatures.
 
